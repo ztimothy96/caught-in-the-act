@@ -1,0 +1,23 @@
+# Core ML
+torch>=2.2.0
+transformers>=4.40.0
+accelerate>=0.29.0        # device_map="auto" multi-GPU support
+
+# Dataset
+datasets>=2.19.0          # HuggingFace datasets (MMLU via cais/mmlu)
+
+# Probes
+scikit-learn>=1.4.0
+numpy>=1.26.0
+
+# Plotting
+matplotlib>=3.8.0
+
+# Config
+pyyaml>=6.0
+
+# API clients
+openai>=1.25.0            # GPT-4o filtering + OpenAI-compatible DeepSeek calls
+
+# Utilities
+tqdm>=4.66.0

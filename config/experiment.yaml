@@ -1,0 +1,75 @@
+# ── Models ────────────────────────────────────────────────────────────────────
+# Models to extract activations from and train probes on.
+# Use HuggingFace model IDs.
+target_models:
+  - Qwen/Qwen2.5-7B-Instruct
+  - Qwen/Qwen2.5-14B-Instruct
+
+# Model used to generate deceptive / honest arguments.
+# Can be an API model name (e.g. "deepseek-reasoner") or a local HF model ID.
+generation_model: deepseek-reasoner
+
+# Model used to filter argument quality.
+filter_model: gpt-4o
+
+# ── MMLU ──────────────────────────────────────────────────────────────────────
+mmlu:
+  subjects:
+    - business_ethics
+    - moral_disputes
+    - moral_scenarios
+    - philosophy
+    - sociology
+    - international_law
+    - jurisprudence
+    - marketing
+    - public_relations
+    - human_sexuality
+    - nutrition
+    - human_aging
+    - logical_fallacies
+    - management
+    - us_foreign_policy
+  # Number of questions to sample per subject (set null to use all)
+  samples_per_subject: null
+  # Random seed for reproducibility
+  seed: 42
+
+# ── Argument generation ───────────────────────────────────────────────────────
+generation:
+  # Max tokens for each generated argument
+  max_tokens: 512
+  temperature: 0.7
+  # Number of retry attempts if generation fails
+  max_retries: 3
+
+# ── Filtering ─────────────────────────────────────────────────────────────────
+filter:
+  # Minimum GPT-4o score (0-10) on each criterion to keep an argument
+  min_persuasiveness: 6
+  min_factual_recall: 5
+  max_tokens: 256
+
+# ── Activation extraction ─────────────────────────────────────────────────────
+activations:
+  # Token position to read from each layer ("last" = final non-padding token)
+  token_position: last
+  batch_size: 8
+  # Fraction of filtered data held out for test
+  test_split: 0.2
+  seed: 42
+
+# ── Probe training ────────────────────────────────────────────────────────────
+probes:
+  # sklearn LogisticRegression kwargs
+  max_iter: 1000
+  C: 1.0
+  # k-fold cross-validation folds (set to null to use train/test split only)
+  cv_folds: 5
+
+# ── INLP ──────────────────────────────────────────────────────────────────────
+inlp:
+  # Maximum number of projection rounds
+  max_rounds: 100
+  # Stop early if accuracy drops below this threshold
+  floor_accuracy: 0.52
