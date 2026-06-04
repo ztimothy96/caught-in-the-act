@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "caught-in-the-act"
+version = "0.1.0"
+description = "Replication of 'Caught in the Act: A Mechanistic Approach to Detecting Deception'"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.2.0",
+    "transformers>=4.40.0",
+    "accelerate>=0.29.0",
+    "datasets>=2.19.0",
+    "scikit-learn>=1.4.0",
+    "numpy>=1.26.0",
+    "matplotlib>=3.8.0",
+    "pyyaml>=6.0",
+    "openai>=1.25.0",
+    "tqdm>=4.66.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

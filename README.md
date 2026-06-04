@@ -49,7 +49,7 @@ caught-in-the-act/
 ## Quickstart
 
 ```bash
-pip install -r requirements.txt
+pip install -e .          # installs the package and all dependencies
 
 export OPENAI_API_KEY=...     # for GPT-4o filtering (stage 3)
 export DEEPSEEK_API_KEY=...   # for argument generation (stage 2)
