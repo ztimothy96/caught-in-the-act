@@ -10,7 +10,7 @@ target_models:
 generation_model: deepseek-reasoner
 
 # Model used to filter argument quality.
-filter_model: gpt-4o
+filter_model: gpt-4o-mini
 
 # ── MMLU ──────────────────────────────────────────────────────────────────────
 mmlu:
