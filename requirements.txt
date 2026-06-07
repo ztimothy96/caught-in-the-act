@@ -21,3 +21,4 @@ openai>=1.25.0            # GPT-4o filtering + OpenAI-compatible DeepSeek calls
 
 # Utilities
 tqdm>=4.66.0
+python-dotenv>=1.0.0

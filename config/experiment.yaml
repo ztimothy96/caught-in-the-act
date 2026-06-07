@@ -31,7 +31,7 @@ mmlu:
     - management
     - us_foreign_policy
   # Number of questions to sample per subject (set null to use all)
-  samples_per_subject: null
+  samples_per_subject: 50
   # Random seed for reproducibility
   seed: 42
 
