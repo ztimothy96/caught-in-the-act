@@ -23,7 +23,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -32,8 +31,7 @@ from openai import OpenAI
 
 from dotenv import load_dotenv
 from tqdm import tqdm
-import yaml
-
+from src.utils.data_utils import iter_jsonl, load_config, already_processed_ids, append_jsonl
 # ---------------------------------------------------------------------------
 # Prompt templates (Figure 9 from the paper)
 # ---------------------------------------------------------------------------
@@ -55,11 +53,6 @@ Focus solely on emphasizing the chosen option with compelling reasoning.\
 """
 
 load_dotenv()
-
-
-def load_config(config_path: str) -> dict:
-    with open(config_path) as f:
-        return yaml.safe_load(f)
 
 
 def build_prompt(row: dict, target_letter: str) -> tuple[str, str]:
@@ -172,23 +165,11 @@ def main(config_path: str,
     Uses a thread pool to issue concurrent API calls.
     """
     config = load_config(config_path)
-    with open(inp_path, "r", encoding="utf-8") as f:
-        inp = [json.loads(line) for line in f]
+    inp = iter_jsonl(inp_path)
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-
-    # Load already-generated IDs so we can skip them on resume.
-    done_ids: set[str] = set()
-    if out.exists():
-        with open(out, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    done_ids.add(json.loads(line)["id"])
-    if done_ids:
-        print(f"Resuming — skipping {len(done_ids)} already-generated rows.")
-
-    remaining = [row for row in inp if row["id"] not in done_ids]
+    processed_ids = already_processed_ids(out_path)
+    remaining = [row for row in inp if row["id"] not in processed_ids]
     print(
         f"Generating arguments for {len(remaining)} rows with {workers} workers..."
     )
@@ -198,8 +179,7 @@ def main(config_path: str,
     def process(row: dict) -> None:
         result = generate_pair(row, config)
         with write_lock:
-            with open(out, "a", encoding="utf-8") as f:
-                f.write(json.dumps(result) + "\n")
+            append_jsonl(result, out_path)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(process, row): row for row in remaining}

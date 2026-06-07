@@ -22,19 +22,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import random
 from pathlib import Path
 
-import yaml
 from datasets import load_dataset
 
+from src.utils.data_utils import load_config, write_jsonl
+
 MMLU_HF_PATH = "cais/mmlu"
-
-
-def load_config(config_path: str) -> dict:
-    with open(config_path) as f:
-        return yaml.safe_load(f)
 
 
 def convert_to_binary(row: dict, subject: str, index: int,
@@ -110,11 +105,9 @@ def main(config_path: str, out_path: str) -> None:
         all_rows.extend(rows)
         print(f"  {subject}: {len(rows)} questions")
 
-    with open(out, "w") as f:
-        for row in all_rows:
-            f.write(json.dumps(row) + "\n")
+    write_jsonl(all_rows, out_path)
 
-    print(f"\nWrote {len(all_rows)} rows → {out}")
+    print(f"\nWrote {len(all_rows)} rows → {out_path}")
 
 
 if __name__ == "__main__":
