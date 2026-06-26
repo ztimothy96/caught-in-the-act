@@ -1,57 +1,48 @@
 """Shared utilities for loading HuggingFace models and managing hooks."""
 
 from __future__ import annotations
+from typing import Callable
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformer_lens.model_bridge import TransformerBridge
 
 
-def load_model(model_name: str, dtype: torch.dtype = torch.bfloat16):
+def load_model(model_name: str):
     """Load a HuggingFace causal LM in eval mode.
 
     Args:
         model_name: HuggingFace model ID or local path.
-        dtype: Weight dtype; bfloat16 is default for memory efficiency.
 
     Returns:
-        model in eval mode, gradients disabled.
+        TransformerBridge object.
     """
-    raise NotImplementedError
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float32 if device == "cpu" else torch.bfloat16
+    bridge = TransformerBridge.boot_transformers(model_name,
+                                                 device=device,
+                                                 dtype=dtype,
+                                                 trust_remote_code=True)
+    bridge.enable_compatibility_mode()
+    bridge.tokenizer.padding_side = "left"
+    bridge.tokenizer.pad_token = bridge.tokenizer.eos_token
+    return bridge
 
 
-def load_tokenizer(model_name: str):
-    """Load tokenizer with left-padding (required for batch inference).
+def _get_residual_hooks(
+    bridge: TransformerBridge
+) -> tuple[list[torch.Tensor], list[tuple[str, Callable]]]:
 
-    Args:
-        model_name: HuggingFace model ID or local path.
+    n_layers = bridge.cfg.n_layers
+    residuals = [None] * n_layers
 
-    Returns:
-        Tokenizer with padding_side="left" and pad_token set.
-    """
-    raise NotImplementedError
+    def make_hook(layer):
 
+        def store_residual(activation, hook):
+            residuals[layer] = activation[:, -1, :].detach().cpu()
 
-def get_num_layers(model) -> int:
-    """Return the number of transformer hidden layers in the model.
+        return store_residual
 
-    Works for Qwen2 and LLaMA-style architectures.
-    """
-    raise NotImplementedError
+    hooks = [(f"blocks.{layer}.hook_resid_post", make_hook(layer))
+             for layer in range(n_layers)]
 
-
-def attach_layer_hooks(model) -> tuple[dict[int, torch.Tensor], list]:
-    """Register hooks that capture the output of each transformer layer.
-
-    Hooks write to a shared dict keyed by layer index. Call .remove() on
-    each handle in the returned list when extraction is complete.
-
-    Args:
-        model: HuggingFace causal LM.
-
-    Returns:
-        (store, handles)
-        store:   dict that will contain {layer_idx: Tensor[batch, seq, hidden]}
-                 after each forward pass.
-        handles: list of hook handles to remove after use.
-    """
-    raise NotImplementedError
+    return residuals, hooks
