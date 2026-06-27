@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Results
+results/activations/
+results/probes/
+results/figures/
