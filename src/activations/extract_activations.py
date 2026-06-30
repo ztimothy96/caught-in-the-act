@@ -37,10 +37,9 @@ from pathlib import Path
 from sklearn.model_selection import train_test_split
 import torch
 from tqdm import tqdm
-from transformer_lens.model_bridge import TransformerBridge
 
-from src.utils.data_utils import iter_jsonl, load_config
-from src.utils.model_utils import _get_residual_hooks, load_model
+from src.utils.data_utils import iter_jsonl, load_config, model_slug
+from src.utils.model_utils import ModelWrapper, _get_residual_hooks, load_model
 
 
 def build_flat_dataset(jsonl_path: str) -> list[dict]:
@@ -73,7 +72,7 @@ def build_flat_dataset(jsonl_path: str) -> list[dict]:
 
 def extract_activations(
     flat_dataset: list[dict],
-    model: TransformerBridge,
+    model: ModelWrapper,
     batch_size: int,
 ) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
     """Run forward passes and collect layer activations for all examples.
@@ -96,7 +95,11 @@ def extract_activations(
                                  return_tensors="pt",
                                  padding=True)
         residuals, hooks = _get_residual_hooks(model)
-        _ = model.run_with_hooks(tokens["input_ids"], fwd_hooks=hooks)
+        _ = model.run_with_hooks(
+            tokens["input_ids"],
+            fwd_hooks=hooks,
+            attention_mask=tokens.get("attention_mask"),
+        )
         activations.append(torch.stack(residuals, dim=1))
         labels.extend([item["label"] for item in batch])
         ids.extend([item["id"] for item in batch])
@@ -134,14 +137,6 @@ def split_dataset(
     }
 
 
-def model_slug(model_name: str) -> str:
-    """Convert HuggingFace model ID to a filesystem-safe slug.
-
-    e.g. "Qwen/Qwen2.5-7B-Instruct" → "qwen2.5-7b-instruct"
-    """
-    return model_name.split("/")[-1].lower()
-
-
 def main(config_path: str, inp_path: str, model_name: str,
          out_dir: str) -> None:
     """Run stage 4: extract activations → save train/test .pt files."""
@@ -161,10 +156,9 @@ def main(config_path: str, inp_path: str, model_name: str,
     }
     train_activations.update(metadata)
     test_activations.update(metadata)
-    torch.save(train_activations,
-               Path(out_dir) / f"{model_slug(model_name)}_train.pt")
-    torch.save(test_activations,
-               Path(out_dir) / f"{model_slug(model_name)}_test.pt")
+    slug = model_slug(model_name)
+    torch.save(train_activations, Path(out_dir) / f"{slug}_train.pt")
+    torch.save(test_activations, Path(out_dir) / f"{slug}_test.pt")
 
 
 if __name__ == "__main__":

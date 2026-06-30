@@ -62,10 +62,8 @@ activations:
 # ── Probe training ────────────────────────────────────────────────────────────
 probes:
   # sklearn LogisticRegression kwargs
-  max_iter: 1000
+  max_iter: 4000
   C: 1.0
-  # k-fold cross-validation folds (set to null to use train/test split only)
-  cv_folds: 5
 
 # ── INLP ──────────────────────────────────────────────────────────────────────
 inlp:

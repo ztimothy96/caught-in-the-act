@@ -13,6 +13,14 @@ def load_config(config_path: str) -> dict:
         return yaml.safe_load(f)
 
 
+def model_slug(model_name: str) -> str:
+    """Convert HuggingFace model ID to a filesystem-safe slug.
+
+    e.g. "Qwen/Qwen2.5-7B-Instruct" → "qwen2.5-7b-instruct"
+    """
+    return model_name.split("/")[-1].lower()
+
+
 def iter_jsonl(path: str) -> Iterator[dict]:
     """Yield parsed dicts from a JSONL file, skipping blank lines.
 

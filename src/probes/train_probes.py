@@ -23,57 +23,22 @@ Usage:
 """
 
 from __future__ import annotations
-
 import argparse
-import pickle
 from pathlib import Path
+import pickle
 
-import numpy as np
-import torch
-import yaml
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.preprocessing import StandardScaler
+import torch
+from tqdm import tqdm
 
-
-def load_activations(path: str) -> dict:
-    """Load a .pt activation file produced by extract_activations.py.
-
-    Args:
-        path: Path to {model_slug}_train.pt.
-
-    Returns:
-        Dict with keys: activations (Tensor), labels (Tensor), ids, model,
-        num_layers, hidden_dim.
-    """
-    raise NotImplementedError
-
-
-def train_probe_for_layer(
-    X: np.ndarray,
-    y: np.ndarray,
-    C: float,
-    max_iter: int,
-    cv_folds: int | None,
-) -> dict:
-    """Fit a logistic regression probe on activations for a single layer.
-
-    Args:
-        X: [N, hidden_dim] float32 array of activations.
-        y: [N] int array of labels (0=honest, 1=deceptive).
-        C: Regularization strength (inverse of lambda).
-        max_iter: Max solver iterations.
-        cv_folds: If set, run stratified k-fold CV and record per-fold accuracy.
-
-    Returns:
-        Dict with keys: probe, train_acc, cv_accs.
-    """
-    raise NotImplementedError
+from src.utils.data_utils import load_config, model_slug
 
 
 def train_all_layers(
     activation_data: dict,
     config: dict,
-) -> dict[int, dict]:
+) -> tuple[list[LogisticRegression], list[StandardScaler]]:
     """Train probes for all layers in the activation file.
 
     Args:
@@ -81,22 +46,43 @@ def train_all_layers(
         config: Full experiment config (uses config["probes"]).
 
     Returns:
-        Dict mapping layer_idx → probe result dict.
+        List of probes and scalers.
     """
-    raise NotImplementedError
+    activations, labels, _, _, num_layers, _ = activation_data.values()
+    probes = [None] * num_layers
+    scalers = [None] * num_layers
+
+    for layer in tqdm(range(num_layers)):
+        scaler = StandardScaler()
+        X = scaler.fit_transform(activations[:, layer, :])
+        y = labels
+        C = config["probes"]["C"]
+        max_iter = config["probes"]["max_iter"]
+        probe = LogisticRegression(C=C, max_iter=max_iter)
+        probe.fit(X, y)
+        probes[layer] = probe
+        scalers[layer] = scaler
+    return probes, scalers
 
 
-def model_slug(model_name: str) -> str:
-    return model_name.split("/")[-1].lower()
-
-
-def main(config_path: str, model_name: str, act_dir: str, out_dir: str) -> None:
+def main(config_path: str, model_name: str, act_dir: str,
+         out_dir: str) -> None:
     """Run stage 5: train probes for all layers → save .pkl."""
-    raise NotImplementedError
+    slug = model_slug(model_name)
+    config = load_config(config_path)
+    # Dict with keys: activations (Tensor), labels (Tensor), ids, model, num_layers, hidden_dim.
+    activation_data = torch.load(f"{act_dir}/{slug}_train.pt")
+    probes, scalers = train_all_layers(activation_data, config)
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    with open(Path(out_dir) / f"{slug}_probes.pkl", "wb") as f:
+        pickle.dump(probes, f)
+    with open(Path(out_dir) / f"{slug}_scalers.pkl", "wb") as f:
+        pickle.dump(scalers, f)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train per-layer deception probes.")
+    parser = argparse.ArgumentParser(
+        description="Train per-layer deception probes.")
     parser.add_argument("--config", default="config/experiment.yaml")
     parser.add_argument("--model", required=True, help="HuggingFace model ID")
     parser.add_argument("--act-dir", default="results/activations")

@@ -31,38 +31,19 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import pickle
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
-import yaml
-from sklearn.metrics import accuracy_score
 
-
-def load_probes(path: str) -> dict[int, dict]:
-    """Load probe dict from a .pkl file."""
-    raise NotImplementedError
-
-
-def evaluate_layer(probe, X_test: np.ndarray, y_test: np.ndarray) -> float:
-    """Return accuracy of probe on (X_test, y_test).
-
-    Args:
-        probe: Fitted sklearn LogisticRegression.
-        X_test: [N, hidden_dim] float32.
-        y_test: [N] int.
-    """
-    raise NotImplementedError
+from src.utils.data_utils import model_slug
 
 
 def plot_layer_accuracy(
-    layer_accs: dict[int, float],
+    layer_accs: list[float],
     model_name: str,
     out_path: str,
-    cv_mean_accs: dict[int, float] | None = None,
 ) -> None:
     """Plot probe accuracy vs. layer index and save to file.
 
@@ -77,30 +58,45 @@ def plot_layer_accuracy(
         out_path: Destination .png path.
         cv_mean_accs: Optional {layer_idx: mean_cv_accuracy} for shading.
     """
-    raise NotImplementedError
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(len(layer_accs)), layer_accs, label="Test Accuracy")
+    plt.axhline(y=0.5, color="r", linestyle="--", label="Chance Level")
+    plt.ylim(0, 1)
+    plt.xlabel("Layer Index")
+    plt.ylabel("Accuracy")
+    plt.title(f"{model_name} Probe Accuracy")
+    plt.legend()
+    plt.savefig(out_path)
 
 
 def main(
-    config_path: str,
     model_name: str,
     act_dir: str,
     probe_dir: str,
     fig_dir: str,
 ) -> None:
     """Run stage 6: evaluate probes → save eval.json and layer-accuracy figure."""
-    raise NotImplementedError
-
-
-def model_slug(model_name: str) -> str:
-    return model_name.split("/")[-1].lower()
+    slug = model_slug(model_name)
+    Path(fig_dir).mkdir(parents=True, exist_ok=True)
+    activation_data = torch.load(f"{act_dir}/{slug}_test.pt")
+    probes = pickle.load(open(f"{probe_dir}/{slug}_probes.pkl", "rb"))
+    scalers = pickle.load(open(f"{probe_dir}/{slug}_scalers.pkl", "rb"))
+    layer_accs = [None] * len(probes)
+    for layer in range(len(probes)):
+        scaler = scalers[layer]
+        X = scaler.transform(activation_data["activations"][:, layer, :])
+        y = activation_data["labels"]
+        layer_accs[layer] = probes[layer].score(X, y)
+    plot_layer_accuracy(layer_accs, model_name,
+                        f"{fig_dir}/{slug}_layer_accuracy.png")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evaluate per-layer deception probes.")
-    parser.add_argument("--config", default="config/experiment.yaml")
+    parser = argparse.ArgumentParser(
+        description="Evaluate per-layer deception probes.")
     parser.add_argument("--model", required=True, help="HuggingFace model ID")
     parser.add_argument("--act-dir", default="results/activations")
     parser.add_argument("--probe-dir", default="results/probes")
     parser.add_argument("--fig-dir", default="results/figures")
     args = parser.parse_args()
-    main(args.config, args.model, args.act_dir, args.probe_dir, args.fig_dir)
+    main(args.model, args.act_dir, args.probe_dir, args.fig_dir)
