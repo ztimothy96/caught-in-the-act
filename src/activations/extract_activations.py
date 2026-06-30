@@ -32,7 +32,9 @@ Usage:
 
 from __future__ import annotations
 import argparse
+from collections import defaultdict
 from pathlib import Path
+import random
 
 from sklearn.model_selection import train_test_split
 import torch
@@ -41,32 +43,58 @@ from tqdm import tqdm
 from src.utils.data_utils import iter_jsonl, load_config, model_slug
 from src.utils.model_utils import ModelWrapper, _get_residual_hooks, load_model
 
+_PROBE_CONTEXT_TEMPLATE = """\
+Question: {question}
 
-def build_flat_dataset(jsonl_path: str) -> list[dict]:
-    """Read filtered JSONL and return a flat list of (text, label, id) dicts.
+Options:
+A) {choice_A}
+B) {choice_B}
 
-    Each row is expanded into two items:
-        {"text": row["honest_arg"],    "label": 0, "id": row["id"] + "_honest"}
-        {"text": row["deceptive_arg"], "label": 1, "id": row["id"] + "_deceptive"}
+Argument: {argument}\
+"""
+
+
+def build_flat_dataset(jsonl_path: str, seed: int = 42) -> list[dict]:
+    """Read filtered JSONL and return a flat list of context-aware example dicts.
+
+    Each row is expanded into two items — one honest (label=0) and one deceptive
+    (label=1).  Each item stores a messages list with the question, both choices,
+    and the argument (matching the black-box judge's input from Figure 8), so the
+    probe model can form representations that distinguish honest from deceptive
+    content without being given the generation direction as a shortcut.
 
     Args:
         jsonl_path: Path to arguments_filtered.jsonl.
+        seed: RNG seed for reproducible A/B randomization.
 
     Returns:
-        List of dicts with keys: text, label, id.
+        List of dicts with keys: messages (list), label (int), id (str).
     """
+    rng = random.Random(seed)
     flat_dataset = []
     for row in iter_jsonl(jsonl_path):
-        flat_dataset.append({
-            "text": row["honest_arg"],
-            "label": 0,
-            "id": row["id"] + "_honest",
-        })
-        flat_dataset.append({
-            "text": row["deceptive_arg"],
-            "label": 1,
-            "id": row["id"] + "_deceptive",
-        })
+        if rng.random() < 0.5:
+            disp_A, disp_B = row["choice_B"], row["choice_A"]
+        else:
+            disp_A, disp_B = row["choice_A"], row["choice_B"]
+
+        for arg, label, suffix in [
+            (row["honest_arg"],    0, "_honest"),
+            (row["deceptive_arg"], 1, "_deceptive"),
+        ]:
+            user_content = _PROBE_CONTEXT_TEMPLATE.format(
+                question=row["question"],
+                choice_A=disp_A,
+                choice_B=disp_B,
+                argument=arg,
+            )
+            flat_dataset.append({
+                "messages": [
+                    {"role": "user", "content": user_content},
+                ],
+                "label": label,
+                "id": row["id"] + suffix,
+            })
     return flat_dataset
 
 
@@ -77,9 +105,13 @@ def extract_activations(
 ) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
     """Run forward passes and collect layer activations for all examples.
 
+    Applies the model's chat template to each example so that the instruct model
+    processes the conversation with the correct special tokens, then captures the
+    residual-stream vector at the final (non-padding) token position for every layer.
+
     Args:
         flat_dataset: Output of build_flat_dataset().
-        model: Loaded causal LM with registered hooks (call register_hooks first).
+        model: Loaded causal LM wrapper.
         batch_size: Number of examples per forward pass.
 
     Returns:
@@ -91,9 +123,15 @@ def extract_activations(
     activations, labels, ids = [], [], []
     for i in tqdm(range(0, len(flat_dataset), batch_size)):
         batch = flat_dataset[i:i + batch_size]
-        tokens = model.tokenizer([item['text'] for item in batch],
-                                 return_tensors="pt",
-                                 padding=True)
+        texts = [
+            model.tokenizer.apply_chat_template(
+                item["messages"],
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+            for item in batch
+        ]
+        tokens = model.tokenizer(texts, return_tensors="pt", padding=True)
         residuals, hooks = _get_residual_hooks(model)
         _ = model.run_with_hooks(
             tokens["input_ids"],
@@ -113,35 +151,39 @@ def split_dataset(
     test_fraction: float,
     seed: int,
 ) -> tuple[dict, dict]:
-    """Stratified split into train and test sets.
+    """Group-aware train/test split that keeps question pairs together.
 
     Returns two dicts each with keys: activations, labels, ids.
     """
+    # Group example indices by base question ID (strip _honest / _deceptive)
+    groups: dict[str, list[int]] = defaultdict(list)
+    for i, id_ in enumerate(ids):
+        base = id_.rsplit("_", 1)[0]
+        groups[base].append(i)
 
-    train_activations, test_activations, train_labels, test_labels, train_ids, test_ids = train_test_split(
-        activations,
-        labels,
-        ids,
+    group_keys = list(groups.keys())
+    train_keys, test_keys = train_test_split(
+        group_keys,
         test_size=test_fraction,
         random_state=seed,
-        stratify=labels)
+    )
 
-    return {
-        "activations": train_activations,
-        "labels": train_labels,
-        "ids": train_ids,
-    }, {
-        "activations": test_activations,
-        "labels": test_labels,
-        "ids": test_ids,
-    }
+    def gather(keys: list[str]) -> dict:
+        idx = [i for k in keys for i in groups[k]]
+        return {
+            "activations": activations[idx],
+            "labels":      labels[idx],
+            "ids":         [ids[i] for i in idx],
+        }
+
+    return gather(train_keys), gather(test_keys)
 
 
 def main(config_path: str, inp_path: str, model_name: str,
          out_dir: str) -> None:
     """Run stage 4: extract activations → save train/test .pt files."""
     config = load_config(config_path)
-    flat_dataset = build_flat_dataset(inp_path)
+    flat_dataset = build_flat_dataset(inp_path, seed=config["activations"]["seed"])
     model = load_model(model_name)
     activations, labels, ids = extract_activations(
         flat_dataset, model, config["activations"]["batch_size"])

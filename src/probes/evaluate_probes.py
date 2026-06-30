@@ -31,10 +31,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import pickle
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 import torch
 
 from src.utils.data_utils import model_slug
@@ -45,28 +46,42 @@ def plot_layer_accuracy(
     model_name: str,
     out_path: str,
 ) -> None:
-    """Plot probe accuracy vs. layer index and save to file.
+    """Plot probe accuracy vs. layer index and save to a PNG file.
 
     Includes:
-      - Test accuracy curve
-      - CV mean ± std shading (if cv_mean_accs provided)
-      - Horizontal dashed line at 0.5 (chance baseline)
+      - Test accuracy curve (percentage y-axis)
+      - Horizontal dashed line at 50 % (chance baseline)
 
     Args:
-        layer_accs: {layer_idx: test_accuracy}.
+        layer_accs: Per-layer test accuracy values in [0, 1].
         model_name: Used in the plot title.
         out_path: Destination .png path.
-        cv_mean_accs: Optional {layer_idx: mean_cv_accuracy} for shading.
     """
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(len(layer_accs)), layer_accs, label="Test Accuracy")
-    plt.axhline(y=0.5, color="r", linestyle="--", label="Chance Level")
-    plt.ylim(0, 1)
-    plt.xlabel("Layer Index")
-    plt.ylabel("Accuracy")
-    plt.title(f"{model_name} Probe Accuracy")
-    plt.legend()
-    plt.savefig(out_path)
+    layers = list(range(len(layer_accs)))
+    pct = [acc * 100 for acc in layer_accs]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=layers, y=pct,
+        mode="lines+markers",
+        name="Test Accuracy",
+        line=dict(color="#1f77b4", width=2),
+        marker=dict(size=5),
+    ))
+    fig.add_hline(
+        y=50, line_dash="dash", line_color="red",
+        annotation_text="Chance (50%)", annotation_position="bottom right",
+    )
+    fig.update_layout(
+        title=f"{model_name} — Layer-wise Probing Accuracy",
+        xaxis_title="Layer Index",
+        yaxis_title="Accuracy",
+        yaxis=dict(range=[0, 100], ticksuffix="%"),
+        legend=dict(x=0.01, y=0.99),
+        width=900, height=550,
+        template="plotly_white",
+    )
+    fig.write_image(out_path)
 
 
 def main(
@@ -89,6 +104,18 @@ def main(
         layer_accs[layer] = probes[layer].score(X, y)
     plot_layer_accuracy(layer_accs, model_name,
                         f"{fig_dir}/{slug}_layer_accuracy.png")
+
+    best_layer = int(max(range(len(layer_accs)), key=lambda i: layer_accs[i]))
+    eval_result = {
+        "model":      model_name,
+        "best_layer": best_layer,
+        "best_acc":   layer_accs[best_layer],
+        "layer_accs": {str(i): acc for i, acc in enumerate(layer_accs)},
+    }
+    eval_path = Path(probe_dir) / f"{slug}_eval.json"
+    with open(eval_path, "w") as f:
+        json.dump(eval_result, f, indent=2)
+    print(f"Best layer: {best_layer} (acc={layer_accs[best_layer]:.3f}) → {eval_path}")
 
 
 if __name__ == "__main__":
