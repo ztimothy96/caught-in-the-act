@@ -83,4 +83,4 @@ python -m src.probes.inlp            --model Qwen/Qwen2.5-7B-Instruct --layer 20
 
 ## Reference
 
-Papadatos & Freedman (2025). *Caught in the Act: A Mechanistic Approach to Detecting Deception.* [arXiv:2508.19505](https://arxiv.org/abs/2508.19505)
+Boxo, Socha, Yoo, and Raval (2025). *Caught in the Act: A Mechanistic Approach to Detecting Deception.* [arXiv:2508.19505](https://arxiv.org/abs/2508.19505)
