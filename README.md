@@ -1,5 +1,7 @@
 # Caught in the Act — Replication
 
+![probe accuracy](results/figures/all_models_layer_accuracy.png)
+
 A replication of the key findings from [**"Caught in the Act: A Mechanistic Approach to Detecting Deception"**](https://arxiv.org/abs/2508.19505). The paper shows that linear probes trained on a model's internal activations can reliably distinguish deceptive from honest arguments — and that this signal becomes stronger and more robust as model size increases.
 
 ## What this codebase does
